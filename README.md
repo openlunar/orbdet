@@ -22,6 +22,7 @@ through Anaconda as part of the Orekit python wrapper.
 * Matplotlib
 * Anaconda
 * Orekit
+* SpiceyPy
 
 ## License
 
