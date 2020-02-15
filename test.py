@@ -28,8 +28,9 @@ from org.orekit.python import PythonBatchLSObserver as BatchLSObserver
 from java.util import ArrayList
 
 from spice_loader import *
+from generate import station_coords, generate_ground_measurements
 
-loader = SpiceLoader()
+loader = SpiceLoader('mission')
 
 # Some global variables
 mu = 398600435436095.9
@@ -72,9 +73,7 @@ class LunarBatchLSObserver(BatchLSObserver):
                             lsp_evaluation):
         print("Test")
 
-def station_coords(station_name, et0):
-    xyz = spice.spkezr(station_name, et0, 'ITRF93', 'NONE', 'EARTH')[0][0:3]
-    return spice.recgeo(xyz, req, flattening)
+
 
 def orekit_station(station_name, et):
     lon, lat, alt  = station_coords(station_name, et)
@@ -104,10 +103,19 @@ def orekit_measurements(measurements):
 if __name__ == '__main__':
 
 
+    et0, etf = SpiceLoader.spk_coverage('kernels/mission.bsp')
+    print("et0, etf = {}, {}".format(et0, etf))
 
-    et0 = 708687952.5569172
+    # Cut off the ends to avoid light time problems
+    et0 += 100.0
+    etf -= 100.0
+    
     t0  = orekit_time(et0)
     x0  = orekit_state([-6.45306258e+06, -1.19390257e+06, -8.56858164e+04, 1.83609046e+03, -9.56878337e+03, -4.95077925e+03])
+
+    ets, ranges, range_rates = generate_ground_measurements('mission', -5440, station_names, (et0, et0 + 10000.0, 1.0))
+    import pdb
+    pdb.set_trace()
     
     gravity_field = GravityFieldFactory.getNormalizedProvider(gravity_degree, gravity_order)
     guess = CartesianOrbit(x0, j2000, t0, gravity_field.getMu())

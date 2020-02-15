@@ -11,10 +11,16 @@ class SpiceLoader(object):
         self.dir        = dir
         self.object_id  = id
 
-        names = ['de432s.bsp', 'pck00010.tpc', 'naif0012.tls',
-                 'moon_pa_de421_1900-2050.bpc', 'moon_080317.tf',
-                 'moon_fixed_me.tf', 'gm_de431.tpc', 'earth_070425_370426_predict.bpc',
-                 'earthstns_itrf93_050714.bsp', 'earth_topo_050714.tf']
+        names = ['de432s.bsp',
+                 'pck00010.tpc',
+                 'naif0012.tls',
+                 'moon_pa_de421_1900-2050.bpc',
+                 'moon_080317.tf',
+                 'moon_fixed_me.tf',
+                 'gm_de431.tpc',
+                 'earth_070425_370426_predict.bpc',
+                 'earthstns_itrf93_050714.bsp',
+                 'earth_topo_050714.tf']
         if mission is not None:
             names.append(mission + '.bsp')
             self.mission = mission
