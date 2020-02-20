@@ -8,7 +8,7 @@ setup_orekit_curdir()
 from org.orekit.utils import Constants, PVCoordinates, IERSConventions
 #from org.orekit.estimation import Context
 from org.orekit.estimation.leastsquares import BatchLSEstimator #, BatchLSObserver
-from org.orekit.estimation.measurements import GroundStation, Range, RangeRate, PV, ObservedMeasurement
+from org.orekit.estimation.measurements import GroundStation, Range, RangeRate, PV, ObservedMeasurement, ObservableSatellite
 from org.orekit.estimation.measurements.modifiers import Bias, OutlierFilter
 from org.hipparchus.optim.nonlinear.vector.leastsquares import LevenbergMarquardtOptimizer, GaussNewtonOptimizer
 from org.hipparchus.linear import QRDecomposer
@@ -23,7 +23,7 @@ from org.orekit.forces.gravity.potential import GravityFieldFactory, NormalizedS
 from org.orekit.propagation import Propagator
 from org.orekit.propagation.conversion import NumericalPropagatorBuilder, DormandPrince853IntegratorBuilder
 from org.orekit.propagation.numerical import NumericalPropagator
-from org.orekit.python import PythonBatchLSObserver as BatchLSObserver
+from org.orekit.python import PythonBatchLSObserver
 
 from java.util import ArrayList
 
@@ -41,6 +41,7 @@ req = spice.bodvcd(399, 'RADII', 3)[1][0].item() * 1000.0
 rpol = spice.bodvcd(399, 'RADII', 3)[1][2].item() * 1000.0
 flattening = (req - rpol) / req
 body = OneAxisEllipsoid(req, flattening, itrf93)
+satellite = ObservableSatellite(0)
 gravity_degree = 20
 gravity_order  = 20
 
@@ -66,17 +67,21 @@ class StationData(object):
         self.range_sigma      = range_sigma
         self.range_rate_sigma = range_rate_sigma
 
-class LunarBatchLSObserver(BatchLSObserver):
-    def evaluationPerformed(iterations_count, evaluations_count, orbits,
+class LunarBatchLSObserver(PythonBatchLSObserver):
+    def evaluationPerformed(self, iterations_count, evaluations_count, orbits,
                             estimated_orbital_parameters, estimated_propagator_parameters,
                             estimated_measurements_parameters, evaluations_provider,
                             lsp_evaluation):
+        drivers = estimated_orbital_parameters.getDrivers()
+        print("{}:\t{} {} {}\t{} {} {}".format(iterations_count, drivers.get(0), drivers.get(1), drivers.get(2), drivers.get(3), drivers.get(4), drivers.get(5)))
+        import pdb
+        pdb.set_trace()
         print("Test")
 
 
 
 def orekit_station(station_name, et):
-    lon, lat, alt  = station_coords(station_name, et)
+    lon, lat, alt  = station_coords(station_name, et, req, flattening)
     pos            = GeodeticPoint(lat, lon, alt)
     frame_history  = FramesFactory.findEOP(body.getBodyFrame())
     topo_frame     = TopocentricFrame(body, pos, station_name)
@@ -99,6 +104,25 @@ def orekit_measurements(measurements):
         ary.add(measurement)
     return ary
 
+def orekit_ranges(station_data, station_ets, station_ranges):
+    orekit_ranges = []
+    for station in station_ranges:
+        ets = station_ets[station]
+        for ii, rho in enumerate(station_ranges[station]):
+            time = orekit_time(ets[ii].item())
+            orekit_ranges.append( Range(station_data[station].station, True, time, rho, station_data[station].range_sigma, range_base_weight, satellite) )
+    return orekit_ranges
+
+def orekit_range_rates(station_data, station_ets, station_range_rates):
+    orekit_range_rates = []
+    for station in station_ranges:
+        ets = station_ets[station]
+        for ii,rho_dot in enumerate(station_range_rates[station]):
+            time = orekit_time(ets[ii].item())
+            orekit_range_rates.append( RangeRate(station_data[station].station, time, rho_dot, station_data[station].range_rate_sigma, range_rate_base_weight, True, satellite) )
+    return orekit_range_rates
+
+
 
 if __name__ == '__main__':
 
@@ -111,11 +135,22 @@ if __name__ == '__main__':
     etf -= 100.0
     
     t0  = orekit_time(et0)
-    x0  = orekit_state([-6.45306258e+06, -1.19390257e+06, -8.56858164e+04, 1.83609046e+03, -9.56878337e+03, -4.95077925e+03])
+    x0  = orekit_state([-6.45306258e+06, -1.19390257e+06, -8.56858164e+04,
+                         1.83609046e+03, -9.56878337e+03, -4.95077925e+03])
 
-    ets, ranges, range_rates = generate_ground_measurements('mission', -5440, station_names, (et0, et0 + 10000.0, 1.0))
-    import pdb
-    pdb.set_trace()
+    # Generate measurements
+    station_ets, station_ranges, station_range_rates, station_elevations = generate_ground_measurements('mission', -5440, station_names, (et0, (etf + et0) * 0.5, 1000.0))
+    
+    # Setup ground stations
+    station_data = {}
+    for name in station_names:
+        station_data[name] = StationData(name, et0)
+    
+    # Put measurements into orekit Range and RangeRate objects (in a Python list)
+    range_objs = orekit_ranges(station_data, station_ets, station_ranges)
+    range_rate_objs = orekit_range_rates(station_data, station_ets, station_range_rates)
+    measurements = range_objs + range_rate_objs
+    #measurements = orekit_measurements(range_objs + range_rate_objs)
     
     gravity_field = GravityFieldFactory.getNormalizedProvider(gravity_degree, gravity_order)
     guess = CartesianOrbit(x0, j2000, t0, gravity_field.getMu())
@@ -124,8 +159,8 @@ if __name__ == '__main__':
     optimizer = GaussNewtonOptimizer(QRDecomposer(1e-11), False) #LevenbergMarquardtOptimizer()
 
     integ_builder = DormandPrince853IntegratorBuilder(min_step, max_step, dP)
-    prop_builder = NumericalPropagatorBuilder(guess, integ_builder, PositionAngle.MEAN, position_scale)
-    prop_builder.addForceModel(HolmesFeatherstoneAttractionModel(body.getBodyFrame(), gravity_field))
+    prop_builder = NumericalPropagatorBuilder(guess, integ_builder, PositionAngle.TRUE, position_scale)
+    #prop_builder.addForceModel(HolmesFeatherstoneAttractionModel(body.getBodyFrame(), gravity_field))
 
     
     estimator = BatchLSEstimator(optimizer, prop_builder)
@@ -133,15 +168,9 @@ if __name__ == '__main__':
     estimator.maxIterations = 10
     estimator.maxEvaluations = 20
 
-    # Setup ground stations
-    station_data = {}
-    for name in station_names:
-        station_data[name] = StationData(name, et0)
+    for measurement in measurements:
+        estimator.addMeasurement(measurement)
 
-    range_test = Range(station_data['DSS-15'].station, True, t0, 1500000.0, station_data['DSS-15'].range_sigma, range_base_weight, None)
-    range_rate_test = RangeRate(station_data['DSS-15'].station, t0, 5000.0, station_data['DSS-15'].range_rate_sigma, range_rate_base_weight, True, None)
-
-    measurements = orekit_measurements([range_test, range_rate_test])
 
     estimator.setObserver(LunarBatchLSObserver())
     estimated_orbit = estimator.estimate()[0].getInitialState().getOrbit()
