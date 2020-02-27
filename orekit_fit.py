@@ -28,7 +28,7 @@ gravity_order  = 20
 
 
 # For integrator
-min_step = 0.001
+min_step = 1e-11
 max_step = 300.0
 dP = 10.0
 
