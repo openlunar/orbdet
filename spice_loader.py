@@ -45,6 +45,9 @@ class SpiceLoader(object):
         
         return self.loaded
 
+    def clear(self):
+        spice.kclear()
+
     def load_constants(self):
         self.r_earth         = spice.bodvcd(399, 'RADII', 3)[1]
         self.r_moon          = spice.bodvcd(301, 'RADII', 3)[1]

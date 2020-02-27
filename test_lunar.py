@@ -1,6 +1,8 @@
 from spice_loader import *
 from generate import station_coords, generate_ground_measurements
 from orekit_utils import *
+from plot_ephemeris import plot_ephemeris
+from propagate import propagate
 
 from scipy.linalg import norm
 
@@ -16,7 +18,7 @@ import numpy as np
 loader = SpiceLoader('mission')
 
 # Some global variables
-mu = 398600435436095.9
+#mu = 398600435436095.9
 j2000 = FramesFactory.getEME2000()
 itrf93 = FramesFactory.getITRF(IERSConventions.IERS_2010, True)
 station_names = ('DSS-15', 'DSS-45', 'DSS-65')
@@ -36,13 +38,13 @@ gravity_order  = 20
 # For integrator
 min_step = 0.001
 max_step = 300.0
-dP = 10.0
+dP = 0.1
 
 # For propagator
 position_scale = dP
 
 # Levenberg-Marquardt
-bound_factor = 1e6
+bound_factor = 1e8
 
 
 
@@ -60,22 +62,21 @@ class LunarBatchLSObserver(PythonBatchLSObserver):
 
         earth_moon_state = np.zeros(48)
         earth_moon_state[0:6] = state
-        earth_moon_state[6:12] = np.array([384402000.0, 0.0, 0.0,
-                                           0.0, 2.649e-6 * 384402000.0, 0.0])
+        earth_moon_state[6:12] = spice.spkez(301, et0, 'J2000', 'NONE', 399)[0] * 1000.0
         earth_moon_state[12:] = np.identity(6).reshape(36)
 
         print("Trying to plot...")
-        try:
-            ts, xs, xf, Phi = propagate_to(dynamics, 0.0, earth_moon_state, 30000.0,
-                                           max_step = 500.0)
-            ax.plot(xs[0,:], xs[1,:], xs[2,:], label="{}".format(iterations_count), alpha=(1/31.0) * iterations_count, c='r')
-        except ZeroDivisionError:
-            print("Warning: Couldn't plot due to zero division error")
 
-        if iterations_count == 31:
-            plt.show()
+        t0 = orbits[0].date
+        x0 = orekit_state(state)
+        tf = orekit_time(self.tf)
         
-        print("Test")
+        eph = propagate(t0, x0, tf, write = False)
+
+        ax.plot(eph.x[:,0] * 1000.0, eph.x[:,1] * 1000.0, eph.x[:,2] * 1000.0, label="{}".format(iterations_count), alpha=(1/40.0) * iterations_count, c='r')
+        #except ZeroDivisionError:
+        #    print("Warning: Couldn't plot due to zero division error")
+        
 
         
 if __name__ == '__main__':
@@ -93,13 +94,13 @@ if __name__ == '__main__':
     etf -= 100.0
     
     t0  = orekit_time(et0)
-    #x0  = orekit_state([-6.45306258e+06, -1.19390257e+06, -8.56858164e+04,
-    #                     1.83609046e+03, -9.56878337e+03, -4.95077925e+03])
-    x0 = PVCoordinates(Vector3D(-40517522.9, -10003079.9, 166792.8),
-                       Vector3D(762.559, -1474.468, 55.430))
+    x0  = orekit_state([-6.45306258e+06, -1.19390257e+06, -8.56858164e+04,
+                         1.83609046e+03, -9.56878337e+03, -4.95077925e+03])
+    #x0 = PVCoordinates(Vector3D(-40517522.9, -10003079.9, 166792.8),
+    #                   Vector3D(762.559, -1474.468, 55.430))
 
     # Generate measurements
-    station_ets, station_ranges, station_range_rates, station_elevations = generate_ground_measurements('mission', -5440, station_names, (et0, (etf + et0) * 0.5, 10000.0))
+    station_ets, station_ranges, station_range_rates, station_elevations = generate_ground_measurements('mission', -5440, station_names, (et0, etf, 10000.0))
     
     # Setup ground stations
     station_data = orekit_spice_stations(body, station_names, et0)
@@ -131,5 +132,19 @@ if __name__ == '__main__':
         estimator.addMeasurement(measurement)
 
 
-    estimator.setObserver(LunarBatchLSObserver())
-    estimated_orbit = estimator.estimate() #[0].getInitialState().getOrbit()
+    observer = LunarBatchLSObserver()
+    observer.tf = etf
+    
+    estimator.setObserver(observer)
+    try:
+        estimated_orbit = estimator.estimate() #[0].getInitialState().getOrbit()
+    except:
+        for ii,et in enumerate(np.arange(et0, etf, (etf - et0) / 20.0)):
+            rm = spice.spkezp(301, et, 'J2000', 'NONE', 399)[0]
+            ax.scatter([rm[0]], [rm[1]], [rm[2]], c='b', alpha = ii/20.0, s=2)
+
+        spice_loader = SpiceLoader('mission')
+        plot_ephemeris(spice_loader, axes = ax)
+        
+        plt.show()
+            

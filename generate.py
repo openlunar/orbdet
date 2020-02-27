@@ -2,6 +2,8 @@ from spice_loader import *
 
 from scipy.linalg import norm
 
+import numpy.random as npr
+
 def station_coords(station_name, et0, req, flattening):
     xyz = spice.spkezr(station_name, et0, 'ITRF93', 'NONE', 'EARTH')[0][0:3] * 1000.0
     return spice.recgeo(xyz, req, flattening)
@@ -51,8 +53,12 @@ def generate_ground_measurements(name, object_id, stations, time_arange_args,
             if moon_occult >= 0:
                 if lat >= min_elevation:
                     station_times[station].append(et)
-                    station_ranges[station].append(r * 1000.0)
-                    station_range_rates[station].append(v_component * 1000.0)
+
+                    r_noise = npr.randn(1).item() * 1.0
+                    v_noise = npr.randn(1).item() * 0.001
+                    
+                    station_ranges[station].append(r * 1000.0 + r_noise)
+                    station_range_rates[station].append(v_component * 1000.0 + v_noise)
                     station_elevations[station].append(lat)
                 else:
                     pass
