@@ -1,6 +1,8 @@
 from spice_loader import *
 from generate import station_coords, generate_ground_measurements
 from orekit_utils import *
+from propagate import propagate, WriteSpiceEphemerisHandler
+import frames
 
 from scipy.linalg import norm
 
@@ -28,9 +30,9 @@ gravity_order  = 20
 
 
 # For integrator
-min_step = 1e-11
+min_step = 1e-15
 max_step = 300.0
-dP = 10.0
+dP = 1.0
 
 # For propagator
 position_scale = dP
@@ -65,9 +67,6 @@ class LunarBatchLSObserver(PythonBatchLSObserver):
             ax.plot(xs[0,:], xs[1,:], xs[2,:], label="{}".format(iterations_count), alpha=min(1.0, 0.05 * iterations_count), c='r')
         except ZeroDivisionError:
             print("Warning: Couldn't plot due to zero division error")
-
-        if iterations_count > 20:
-            plt.show()
         
         print("Test")
 
@@ -84,7 +83,7 @@ if __name__ == '__main__':
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter([0], [0], [0], label='earth')
+    ax.scatter([0], [0], [0], label='earth', alpha=0.5)
 
     dynamics = Dynamics()
     
@@ -98,19 +97,21 @@ if __name__ == '__main__':
     
     gravity_field = GravityFieldFactory.getNormalizedProvider(gravity_degree, gravity_order)
 
-    #guess = KeplerianOrbit(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    #guess = EquinoctialOrbit(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    guess_date_components = DateTimeComponents.parseDateTime("2022-06-16T21:44:43.373")
-    guess_date = AbsoluteDate(guess_date_components, TimeScalesFactory.getUTC())
-    guess = CartesianOrbit(PVCoordinates(Vector3D(-6.45306258e+06, -1.19390257e+06, -8.56858164e+04),
-                                         Vector3D( 1.83609046e+03, -9.56878337e+03  -4.95077925e+03)),
-                           j2000, guess_date, mu)
+    # We don't want to start at the beginning of the trajectory
+    # because it's too hard to propagate through the low altitide
+    # parts.
+    et0, etf = loader.coverage()
+    et0 += 3600.0
+    t0 = orekit_time(et0)
+    x0 = orekit_state(spice.spkez(-5440, et0, 'J2000', 'NONE', 399)[0] * 1000.0)
+    guess = CartesianOrbit(x0, j2000, t0, mu)
     
     #optimizer = GaussNewtonOptimizer(QRDecomposer(1e-11), False) #LevenbergMarquardtOptimizer()
     optimizer = LevenbergMarquardtOptimizer().withInitialStepBoundFactor(bound_factor)
     
     integ_builder = DormandPrince853IntegratorBuilder(min_step, max_step, dP)
     prop_builder = NumericalPropagatorBuilder(guess, integ_builder, PositionAngle.TRUE, position_scale)
+    prop_builder.addForceModel(ThirdBodyAttraction(CelestialBodyFactory.getMoon()))
     #prop_builder.addForceModel(HolmesFeatherstoneAttractionModel(body.getBodyFrame(), gravity_field))
 
     
@@ -124,7 +125,36 @@ if __name__ == '__main__':
 
     estimator.setObserver(LunarBatchLSObserver())
     
-    estimated_orbit = estimator.estimate()
+    propagator = estimator.estimate()[0]
+    logger = WriteSpiceEphemerisHandler()
+    logger.body_id = -5440
+    logger.write = False
+
+    propagator.setMasterMode(300.0, logger)
+    propagator.propagate(orekit_time(etf))
+    xfit = logger.x.T * 1000.0
+    
+    ax.plot(xfit[0,:], xfit[1,:], xfit[2,:], alpha=0.5, label='fit')
+
+    cov_inrtl = orekit_matrix_to_ndarray(estimator.getPhysicalCovariances(1e-12))
+
+    # Get earth and moon-relative inertial states
+    x_eci = logger.x[-1] * 1000.0
+    x_lci = x_eci + spice.spkez(301, et0, 'J2000', 'NONE', 399)[0] * 1000.0
+    
+    # Earth LVLH
+    T_inrtl_to_elvlh = frames.compute_T_inrtl_to_lvlh(x_eci)
+    cov_elvlh  = T_inrtl_to_elvlh.dot(cov_inrtl).dot(T_inrtl_to_elvlh.T)
+
+    # Lunar LVLH
+    T_inrtl_to_llvlh = frames.compute_T_inrtl_to_lvlh(x_lci)
+    cov_llvlh = T_inrtl_to_llvlh.dot(cov_inrtl).dot(T_inrtl_to_llvlh.T)
+
+    
+    ax.legend()
+    
+    print("Earth LVLH sigma = {}".format(np.sqrt(np.diag(cov_llvlh))))
+    print("Lunar LVLH sigma = {}".format(np.sqrt(np.diag(cov_elvlh))))
 
     plt.show()
     #[0].getInitialState().getOrbit()

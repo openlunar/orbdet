@@ -12,7 +12,7 @@ def generate_measurements(station, station_name, meas_type, et0, etf, x0,
                         step        = 2400.0,
                         seed        = 0):
     t0 = orekit_time(et0)
-    print(t0.toString())
+    #print(t0.toString())
     tf = orekit_time(etf)
     state0 = orekit_state(x0)
     
@@ -67,8 +67,10 @@ if __name__ == '__main__':
     
 
     et0, etf = loader.coverage()
+    et0 += 3600.0 # skip the really difficult to propagate through part of the trajectory
     x0 = spice.spkez(-5440, et0, 'J2000', 'NONE', 399)[0] * 1000.0
-    print(x0)
+    #print(et0)
+    #print(x0)
 
     stations = orekit_test_stations(body)
 
