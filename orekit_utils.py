@@ -15,7 +15,7 @@ from org.orekit.estimation.measurements.modifiers import Bias, OutlierFilter
 from org.orekit.estimation.measurements.generation import EventBasedScheduler, SignSemantic
 from org.hipparchus.optim.nonlinear.vector.leastsquares import LevenbergMarquardtOptimizer, GaussNewtonOptimizer
 from org.hipparchus.linear import QRDecomposer
-from org.orekit.bodies import GeodeticPoint, OneAxisEllipsoid
+from org.orekit.bodies import GeodeticPoint, OneAxisEllipsoid, CelestialBodyFactory
 from org.orekit.models.earth.displacement import StationDisplacement
 from org.orekit.time import TimeScalesFactory, AbsoluteDate, DateTimeComponents, FixedStepSelector
 import org.orekit.time as oktime
@@ -194,3 +194,19 @@ def orekit_test_data(body, filename, satellite,
             raise SyntaxError("unrecognized mode '{}'".format(mode))
 
     return stations, ranges, rates, azels
+
+def orekit_matrix_to_ndarray(matrix):
+    ary = np.empty((matrix.getRowDimension(), matrix.getColumnDimension()))
+
+    for ii in range(0, matrix.getRowDimension()):
+        for jj in range(0, matrix.getColumnDimension()):
+            ary[ii,jj] = matrix.getEntry(ii,jj)
+
+    return ary
+
+def orekit_vector_to_array(array):
+    ary = np.empty(array.getDimension())
+    for ii in range(0, array.getDimension()):
+        ary[ii] = array.getEntry(ii)
+
+    return ary

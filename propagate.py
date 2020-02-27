@@ -45,7 +45,7 @@ def create_propagator(t0, x0,
                       rtol           = 1e-15,
                       atol           = 1e-9,
                       fixed_step     = 60.0,
-                      dP             = 1e-3,
+                      dP             = None,
                       gravity_degree = 20,
                       gravity_order  = 20,
                       req            = None,
@@ -54,9 +54,15 @@ def create_propagator(t0, x0,
     
     j2000          = FramesFactory.getEME2000()
     orbit          = CartesianOrbit(x0, j2000, t0, gravity_field.getMu())
-    
-    integrator     = DormandPrince853Integrator(min_step, max_step, rtol, atol) #prop_builder.buildPropagator()
+
+    if dP is not None: # Compute absolute and relative tolerances
+        tols = NumericalPropagator.tolerances(dP, orbit, OrbitType.CARTESIAN)
+        atol = orekit.JArray_double.cast_(tols[0])
+        rtol = orekit.JArray_double.cast_(tols[1])
+
+    integrator     = DormandPrince853Integrator(min_step, max_step, atol, rtol) #prop_builder.buildPropagator()
     propagator     = NumericalPropagator(integrator)
+    propagator.addForceModel(ThirdBodyAttraction(CelestialBodyFactory.getMoon()))
     # itrf93 = FramesFactory.getITRF(IERSConventions.IERS_2010, True)
     # body = OneAxisEllipsoid(req, flattening, itrf93)
     # propagator.addForceModel(HolmesFeatherstoneAttractionModel(body.getBodyFrame(), gravity_field))
@@ -69,15 +75,15 @@ def create_propagator(t0, x0,
     return propagator
         
 def propagate(t0, x0, tf,
-              filename       = 'mission.bsp',
-              write          = True):
-
-    print("mu = {}".format(gravity_field.getMu()))
+              object_id       = -5440,
+              filename        = 'mission.bsp',
+              write_ephemeris = False,
+              **kwargs):
 
     eph_writer                = WriteSpiceEphemerisHandler()
     eph_writer.filename       = filename
     eph_writer.body_id        = object_id
-    eph_writer.write          = write
+    eph_writer.write          = write_ephemeris
 
     propagator = create_propagator(t0, x0, eph_writer, **kwargs)
     propagator.propagate(tf)
@@ -95,7 +101,7 @@ if __name__ == '__main__':
     tf = orekit_time(709099110.5780709)
 
 
-    eph = propagate(t0, x0, tf)
+    eph = propagate(t0, x0, tf, write_ephemeris = True, dP = 10.0)
 
     spice_loader.clear()
 
