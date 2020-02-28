@@ -36,7 +36,6 @@ from org.hipparchus.ode.nonstiff import DormandPrince853Integrator
 from java.util import ArrayList
 
 import math
-from generate import station_coords
 
 OREKIT_TEST_STATIONS = {
     'Uralla':     ( -30.632947613,   151.5650529068, 1163.2667864364 ),
@@ -46,18 +45,6 @@ OREKIT_TEST_STATIONS = {
     'Fucino':     (  41.9774962512,   13.6004229863,  671.3542005921 )
     }
 
-class StationData(object):
-    def __init__(self, body, station_name,
-                 et               = None,
-                 range_sigma      = 20.0,
-                 range_rate_sigma = 0.001):
-        if station_name in OREKIT_TEST_STATIONS:
-            self.station      = orekit_station_by_coords(body,
-                                                         *(OREKIT_TEST_STATIONS[station_name]))
-        else:
-            self.station          = orekit_station(body, station_name, et)
-        self.range_sigma      = range_sigma
-        self.range_rate_sigma = range_rate_sigma
 
 def orekit_station_by_geodetic_point(body, station_name, pos, displacements = []):
     frame_history  = FramesFactory.findEOP(body.getBodyFrame())
@@ -73,25 +60,22 @@ def orekit_station_by_coords(body, station_name, lat, lon, alt, displacements = 
     ground_station = GroundStation(topo_frame, frame_history, displacements)
     return ground_station
 
-def orekit_station(body, station_name, et,
-                   displacements = [],
-                   req           = 6378136.6,
-                   flattening    = 0.0033528131084554157):
-    lon, lat, alt  = station_coords(station_name, et, req, flattening)
-    pos            = GeodeticPoint(lat, lon, alt)
-    return orekit_station_by_geodetic_point(body, station_name, pos, displacements)
-
-def orekit_spice_stations(body, station_names, et):
-    station_data = {}
-    for name in station_names:
-        station_data[name] = StationData(body, name, et)
-    return station_data
 
 def orekit_test_stations(body):
     stations = {}
     for station in OREKIT_TEST_STATIONS:
         lat, lon, alt = OREKIT_TEST_STATIONS[station]
         stations[station] = orekit_station_by_coords(body, station, lat, lon, alt)
+    return stations
+
+def orekit_spice_stations(body, et0, station_names = ('DSS-23', 'DSS-33', 'DSS-53')):
+    from spice_loader import spice
+    stations = {}
+    
+    for name in station_names:
+        xyz = spice.spkezr(name, et0, 'ITRF93', 'NONE', 'EARTH')[0][0:3] * 1000.0
+        lon, lat, alt = spice.recgeo(xyz, body.getEquatorialRadius(), body.getFlattening())
+        stations[name] = orekit_station_by_coords(body, name, lat, lon, alt)
     return stations
 
 def orekit_drivers_to_values(ds):
@@ -148,20 +132,17 @@ def orekit_range_rates(satellite, station_data, station_ets, station_range_rates
             orekit_range_rates.append( RangeRate(station_data[station].station, time, rho_dot, station_data[station].range_rate_sigma, range_rate_base_weight, True, satellite) )
     return orekit_range_rates
 
-def orekit_test_data(body, filename, satellite,
+def orekit_test_data(body, filename, satellite, stations,
                      range_sigma            = 20.0,
                      range_rate_sigma       = 0.001,
                      range_base_weight      = 1.0,
                      range_rate_base_weight = 1.0,
                      az_sigma               = 0.02,
-                     el_sigma               = 0.02,
-                     two_way                = True):
+                     el_sigma               = 0.02):
     """Load test data from W3B.aer"""
     azels = []
     ranges = []
     rates = []
-
-    stations = orekit_test_stations(body)
     
     f = open(filename, 'r')
     for line in f:
@@ -173,7 +154,16 @@ def orekit_test_data(body, filename, satellite,
         fields = line.split()
         date_components = DateTimeComponents.parseDateTime(fields[0])
         date = AbsoluteDate(date_components, TimeScalesFactory.getUTC())
-        
+
+        if fields[1] == 'ONEWAY':
+            two_way = False
+            fields.pop(1)
+        elif fields[1] == 'TWOWAY':
+            two_way = True
+            fields.pop(1)
+        else:
+            two_way = True
+            
         mode = fields[1]
         station_name = fields[2]
         station = stations[station_name]
@@ -187,7 +177,7 @@ def orekit_test_data(body, filename, satellite,
             el = float(fields[4]) * math.pi / 180.0
             azel_obj = AngularAzEl(station, date, [az, el], [az_sigma, el_sigma], [az_base_weight, el_base_weight], satellite)
             azels.append( azel_obj )
-        elif mode == 'RRATE':
+        elif mode in ('RATE', 'RRATE'):
             rate_obj = RangeRate(station, date, float(fields[3]), range_rate_sigma, range_rate_base_weight, two_way, satellite)
             rates.append( rate_obj )
         else:

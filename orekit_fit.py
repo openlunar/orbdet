@@ -1,5 +1,4 @@
 from spice_loader import *
-from generate import station_coords, generate_ground_measurements
 from orekit_utils import *
 from propagate import propagate, WriteSpiceEphemerisHandler
 import frames
@@ -75,10 +74,15 @@ class LunarBatchLSObserver(PythonBatchLSObserver):
 
 if __name__ == '__main__':
 
-    if len(sys.argv) > 1:
-        filename = sys.argv[1]
-    else:
-        filename = 'W3B.aer'
+    if len(sys.argv) < 2:
+        print("USAGE: python3 orekit_fit.py <prefix> <filename> <range_sigma> <range_rate_sigma>")
+        exit
+        
+    prefix           = sys.argv[1]
+    filename         = sys.argv[2]
+    range_sigma      = float(sys.argv[3])
+    range_rate_sigma = float(sys.argv[4])
+    
     print("Processing '{}'...".format(filename))
 
     fig = plt.figure()
@@ -87,13 +91,6 @@ if __name__ == '__main__':
 
     dynamics = Dynamics()
     
-
-    # Setup ground stations
-    station_data = orekit_test_stations(body)
-    station_data, range_objs, rate_objs, azel_objs = orekit_test_data(body, filename, satellite)
-    print("Finished reading")
-    
-    measurements = range_objs + rate_objs + azel_objs
     
     gravity_field = GravityFieldFactory.getNormalizedProvider(gravity_degree, gravity_order)
 
@@ -105,6 +102,24 @@ if __name__ == '__main__':
     t0 = orekit_time(et0)
     x0 = orekit_state(spice.spkez(-5440, et0, 'J2000', 'NONE', 399)[0] * 1000.0)
     guess = CartesianOrbit(x0, j2000, t0, mu)
+
+    # Setup ground stations
+    station_names = ('DSS-23', 'DSS-33', 'DSS-53')
+    station_data = orekit_spice_stations(body, et0, station_names)
+    station_data, range_objs, rate_objs, azel_objs = orekit_test_data(body, filename, satellite, station_data,
+                                                                      range_sigma      = range_sigma,
+                                                                      range_rate_sigma = range_rate_sigma)
+    print("Finished reading")
+    if range_sigma == 0.0:
+        print("Range/AzEl")
+        measurements = range_objs + azel_objs
+    elif range_rate_sigma == 0.0:
+        print("RangeRate/AzEl")
+        measurements = rate_objs + azel_objs
+    else:
+        print("Range/RangeRate/AzEl")
+        measurements = range_objs + rate_objs + azel_objs
+
     
     #optimizer = GaussNewtonOptimizer(QRDecomposer(1e-11), False) #LevenbergMarquardtOptimizer()
     optimizer = LevenbergMarquardtOptimizer().withInitialStepBoundFactor(bound_factor)
@@ -140,7 +155,8 @@ if __name__ == '__main__':
 
     # Get earth and moon-relative inertial states
     x_eci = logger.x[-1] * 1000.0
-    x_lci = x_eci + spice.spkez(301, et0, 'J2000', 'NONE', 399)[0] * 1000.0
+    xl_eci = spice.spkez(301, et0, 'J2000', 'NONE', 399)[0] * 1000.0
+    x_lci = x_eci - xl_eci
     
     # Earth LVLH
     T_inrtl_to_elvlh = frames.compute_T_inrtl_to_lvlh(x_eci)
@@ -150,11 +166,24 @@ if __name__ == '__main__':
     T_inrtl_to_llvlh = frames.compute_T_inrtl_to_lvlh(x_lci)
     cov_llvlh = T_inrtl_to_llvlh.dot(cov_inrtl).dot(T_inrtl_to_llvlh.T)
 
+    # Plot the moon's trajectory
+    xls = []
+    for et in np.arange(et0, etf, 3600.0):
+        xls.append( spice.spkez(301, et, 'J2000', 'NONE', 399)[0] * 1000.0 )
+
+    xls = np.vstack(xls).T
+    ax.plot(xls[0,:], xls[1,:], xls[2,:], alpha=0.5, label='moon')
     
     ax.legend()
+
+    print("Earth LVLH 3-sigma = {}".format(3.0 * np.sqrt(np.diag(cov_llvlh))))
+    print("Lunar LVLH 3-sigma = {}".format(3.0 * np.sqrt(np.diag(cov_elvlh))))
+
+    np.save("{}.{}.llvlh.npy".format(prefix, filename), cov_llvlh)
+    np.save("{}.{}.elvlh.npy".format(prefix, filename), cov_elvlh)
     
-    print("Earth LVLH sigma = {}".format(np.sqrt(np.diag(cov_llvlh))))
-    print("Lunar LVLH sigma = {}".format(np.sqrt(np.diag(cov_elvlh))))
+    print("cov_llvlh = {}".format(cov_llvlh))
+    print("cov_elvlh = {}".format(cov_elvlh))
 
     plt.show()
     #[0].getInitialState().getOrbit()
