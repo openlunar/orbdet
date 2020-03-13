@@ -98,7 +98,7 @@ if __name__ == '__main__':
     # because it's too hard to propagate through the low altitide
     # parts.
     et0, etf = loader.coverage()
-    et0 += 3600.0
+    #et0 += 3600.0
     t0 = orekit_time(et0)
     x0 = orekit_state(spice.spkez(-5440, et0, 'J2000', 'NONE', 399)[0] * 1000.0)
     guess = CartesianOrbit(x0, j2000, t0, mu)

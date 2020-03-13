@@ -81,7 +81,7 @@ if __name__ == '__main__':
     
 
     et0, etf = loader.coverage()
-    et0 += 3600.0 # skip the really difficult to propagate through part of the trajectory
+    #et0 += 3600.0 # skip the really difficult to propagate through part of the trajectory
     x0 = spice.spkez(-5440, et0, 'J2000', 'NONE', 399)[0] * 1000.0
     #print(et0)
     #print(x0)
