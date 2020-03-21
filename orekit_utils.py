@@ -7,25 +7,25 @@ vm = orekit.initVM()
 from orekit.pyhelpers import setup_orekit_curdir
 setup_orekit_curdir()
 
-from org.orekit.utils import Constants, PVCoordinates, IERSConventions
+from org.orekit.utils import Constants, PVCoordinates, PVCoordinatesProvider, IERSConventions
 #from org.orekit.estimation import Context
 from org.orekit.estimation.leastsquares import BatchLSEstimator #, BatchLSObserver
 from org.orekit.estimation.measurements import GroundStation, Range, RangeRate, AngularAzEl, PV, ObservedMeasurement, ObservableSatellite
 from org.orekit.estimation.measurements.modifiers import Bias, OutlierFilter
 from org.orekit.estimation.measurements.generation import EventBasedScheduler, SignSemantic
 from org.hipparchus.optim.nonlinear.vector.leastsquares import LevenbergMarquardtOptimizer, GaussNewtonOptimizer
-from org.hipparchus.linear import QRDecomposer
+from org.hipparchus.linear import QRDecomposer, Array2DRowRealMatrix
 from org.orekit.bodies import GeodeticPoint, OneAxisEllipsoid, CelestialBodyFactory
 from org.orekit.models.earth.displacement import StationDisplacement
 from org.orekit.time import TimeScalesFactory, AbsoluteDate, DateTimeComponents, FixedStepSelector
 import org.orekit.time as oktime
 from org.orekit.orbits import CartesianOrbit, KeplerianOrbit, EquinoctialOrbit, PositionAngle, OrbitType
 from org.orekit.frames import FramesFactory, TopocentricFrame
-from org.orekit.forces.gravity import HolmesFeatherstoneAttractionModel, OceanTides, Relativity, SolidTides, ThirdBodyAttraction
+from org.orekit.forces.gravity import HolmesFeatherstoneAttractionModel, OceanTides, Relativity, SolidTides, ThirdBodyAttraction, NewtonianAttraction
 from org.orekit.forces.gravity.potential import GravityFieldFactory, NormalizedSphericalHarmonicsProvider
 from org.orekit.propagation import Propagator, SpacecraftState
 from org.orekit.propagation.conversion import NumericalPropagatorBuilder, DormandPrince853IntegratorBuilder
-from org.orekit.propagation.numerical import NumericalPropagator
+from org.orekit.propagation.numerical import NumericalPropagator, PartialDerivativesEquations
 from org.orekit.propagation.events import ElevationDetector
 from org.orekit.propagation.events.handlers import ContinueOnEvent
 from org.orekit.python import PythonBatchLSObserver, PythonOrekitFixedStepHandler

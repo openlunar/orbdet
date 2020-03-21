@@ -19,7 +19,7 @@ def generate_measurements(station, station_name, meas_type, et0, etf, x0,
     state0 = orekit_state(x0)
     
     noise_source = orekit_gaussian_vector_generator(seed, sigma = sigma)
-    propagator   = create_propagator(t0, state0)
+    propagator, pde = create_propagator(t0, state0)
 
     generator = Generator()
     satellite = generator.addPropagator(propagator)

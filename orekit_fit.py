@@ -31,7 +31,7 @@ gravity_order  = 20
 # For integrator
 min_step = 1e-15
 max_step = 300.0
-dP = 1.0
+dP = 0.1
 
 # For propagator
 position_scale = dP
@@ -45,7 +45,6 @@ class LunarBatchLSObserver(PythonBatchLSObserver):
                             estimated_orbital_parameters, estimated_propagator_parameters,
                             estimated_measurements_parameters, evaluations_provider,
                             lsp_evaluation):
-        print("hi")
         drivers = estimated_orbital_parameters.getDrivers()
 
         state = orekit_drivers_to_values(drivers)
@@ -67,7 +66,6 @@ class LunarBatchLSObserver(PythonBatchLSObserver):
         except ZeroDivisionError:
             print("Warning: Couldn't plot due to zero division error")
         
-        print("Test")
 
 
 
@@ -126,12 +124,13 @@ if __name__ == '__main__':
     
     integ_builder = DormandPrince853IntegratorBuilder(min_step, max_step, dP)
     prop_builder = NumericalPropagatorBuilder(guess, integ_builder, PositionAngle.TRUE, position_scale)
+    prop_builder.addForceModel(NewtonianAttraction(gravity_field.getMu()))
     prop_builder.addForceModel(ThirdBodyAttraction(CelestialBodyFactory.getMoon()))
     #prop_builder.addForceModel(HolmesFeatherstoneAttractionModel(body.getBodyFrame(), gravity_field))
 
     
     estimator = BatchLSEstimator(optimizer, prop_builder)
-    estimator.parametersConvergenceThreshold = 0.1
+    estimator.parametersConvergenceThreshold = 1e-2
     estimator.maxIterations = 40
     estimator.maxEvaluations = 40
 
@@ -145,8 +144,15 @@ if __name__ == '__main__':
     logger.body_id = -5440
     logger.write = False
 
+    # The final time we propagate, let's also get the state transition matrix.
+    pde = PartialDerivativesEquations("dYdY0", propagator)
+    
+    x0 = pde.setInitialJacobians(propagator.getInitialState())
+    propagator.resetInitialState(x0)
+    
+    logger.mapper = pde.getMapper()
     propagator.setMasterMode(300.0, logger)
-    propagator.propagate(orekit_time(etf))
+    final_state = propagator.propagate(orekit_time(etf))
     xfit = logger.x.T * 1000.0
     
     ax.plot(xfit[0,:], xfit[1,:], xfit[2,:], alpha=0.5, label='fit')
@@ -157,14 +163,19 @@ if __name__ == '__main__':
     x_eci = logger.x[-1] * 1000.0
     xl_eci = spice.spkez(301, et0, 'J2000', 'NONE', 399)[0] * 1000.0
     x_lci = x_eci - xl_eci
+
+    Phi = logger.Phi
+
+    print("Phi = {}".format(Phi))
     
     # Earth LVLH
     T_inrtl_to_elvlh = frames.compute_T_inrtl_to_lvlh(x_eci)
-    cov_elvlh  = T_inrtl_to_elvlh.dot(cov_inrtl).dot(T_inrtl_to_elvlh.T)
+    covf_inrtl = Phi.dot(cov_inrtl).dot(Phi.T)
+    covf_elvlh  = T_inrtl_to_elvlh.dot(covf_inrtl).dot(T_inrtl_to_elvlh.T)
 
     # Lunar LVLH
     T_inrtl_to_llvlh = frames.compute_T_inrtl_to_lvlh(x_lci)
-    cov_llvlh = T_inrtl_to_llvlh.dot(cov_inrtl).dot(T_inrtl_to_llvlh.T)
+    covf_llvlh = T_inrtl_to_llvlh.dot(covf_inrtl).dot(T_inrtl_to_llvlh.T)
 
     # Plot the moon's trajectory
     xls = []
@@ -176,14 +187,14 @@ if __name__ == '__main__':
     
     ax.legend()
 
-    print("Earth LVLH 3-sigma = {}".format(3.0 * np.sqrt(np.diag(cov_llvlh))))
-    print("Lunar LVLH 3-sigma = {}".format(3.0 * np.sqrt(np.diag(cov_elvlh))))
+    print("Earth LVLH 3-sigma = {}".format(3.0 * np.sqrt(np.diag(covf_elvlh))))
+    print("Lunar LVLH 3-sigma = {}".format(3.0 * np.sqrt(np.diag(covf_llvlh))))
 
-    np.save("{}.{}.llvlh.npy".format(prefix, filename), cov_llvlh)
-    np.save("{}.{}.elvlh.npy".format(prefix, filename), cov_elvlh)
+    np.save("{}.{}.llvlh.npy".format(prefix, filename), covf_llvlh)
+    np.save("{}.{}.elvlh.npy".format(prefix, filename), covf_elvlh)
     
-    print("cov_llvlh = {}".format(cov_llvlh))
-    print("cov_elvlh = {}".format(cov_elvlh))
+    #print("cov_llvlh = {}".format(covf_llvlh))
+    #print("cov_elvlh = {}".format(covf_elvlh))
 
     plt.show()
     #[0].getInitialState().getOrbit()
